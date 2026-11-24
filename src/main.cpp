@@ -5,7 +5,19 @@
 #include "Supermarket.h"
 using namespace std;
 
+const int LOW_STOCK = 5;
+
 Supermarket market;
+
+// ---------------- Input / output helpers ----------------
+
+void clearScreen() {
+#ifdef _WIN32
+    system("cls");
+#else
+    system("clear");
+#endif
+}
 
 int readInt(string prompt) {
     int value;
@@ -49,13 +61,28 @@ string readText(string prompt) {
     return text;
 }
 
-void pause() {
-    cout << "\nPress Enter to continue...";
-    cin.get();
+bool askYesNo(string question) {
+    string answer = readText(question + " (y/n): ");
+    return answer == "y" || answer == "Y";
 }
 
-void printTitle(string title) {
-    cout << "\n========== " << title << " ==========\n";
+void pause() {
+    cout << "\nPress Enter to continue...";
+    string line;
+    if (!getline(cin, line))
+        exit(0);
+}
+
+void header(string title) {
+    clearScreen();
+    cout << "==================================================\n";
+    cout << "  " << title << "\n";
+    cout << "==================================================\n";
+}
+
+void showMessage(string message) {
+    if (!message.empty())
+        cout << ">> " << message << "\n\n";
 }
 
 void printProducts(vector<Product> list) {
@@ -63,262 +90,386 @@ void printProducts(vector<Product> list) {
         cout << "No products.\n";
         return;
     }
-    cout << left << setw(8) << "ID" << setw(20) << "Name" << setw(10) << "Price" << "Quantity\n";
+    cout << left << setw(8) << "Code" << setw(20) << "Name" << setw(10) << "Price" << "Stock\n";
     cout << string(46, '-') << "\n";
     for (int i = 0; i < (int)list.size(); i++) {
         cout << left << setw(8) << list[i].id << setw(20) << list[i].name
-             << setw(10) << fixed << setprecision(2) << list[i].price << list[i].quantity << "\n";
-    }
-}
-
-void printProduct(Product* p) {
-    if (p == nullptr) {
-        cout << "Product not found.\n";
-        return;
-    }
-    cout << "ID: " << p->id << "\nName: " << p->name
-         << "\nPrice: " << fixed << setprecision(2) << p->price
-         << "\nQuantity: " << p->quantity << "\n";
-}
-
-void printCustomers(vector<Customer> list, bool showPriority) {
-    if (list.empty()) {
-        cout << "Nobody is waiting.\n";
-        return;
-    }
-    for (int i = 0; i < (int)list.size(); i++) {
-        cout << i + 1 << ". " << list[i].name << " (ID " << list[i].id << ")";
-        if (showPriority)
-            cout << " [" << priorityName(list[i].priority) << "]";
+             << setw(10) << fixed << setprecision(2) << list[i].price << list[i].quantity;
+        if (list[i].quantity <= LOW_STOCK)
+            cout << "  (low)";
         cout << "\n";
     }
 }
 
-void productsMenu() {
-    while (true) {
-        printTitle("Products");
-        cout << "1. Add product\n"
-             << "2. Search product (Hash Table)\n"
-             << "3. Search product (BST)\n"
-             << "4. Update price\n"
-             << "5. Update quantity\n"
-             << "6. Delete product\n"
-             << "7. Show products sorted by ID\n"
-             << "0. Back\n";
-        int choice = readInt("Choice: ");
+void printCart() {
+    vector<CartItem> items = market.getCart();
+    if (items.empty()) {
+        cout << "Cart is empty.\n";
+        return;
+    }
+    cout << left << setw(8) << "Code" << setw(20) << "Item" << setw(6) << "Qty" << "Price\n";
+    cout << string(42, '-') << "\n";
+    for (int i = 0; i < (int)items.size(); i++) {
+        cout << left << setw(8) << items[i].productId << setw(20) << items[i].name
+             << setw(6) << items[i].quantity
+             << fixed << setprecision(2) << items[i].price * items[i].quantity << "\n";
+    }
+    cout << string(42, '-') << "\n";
+    cout << left << setw(34) << "TOTAL" << market.cartTotal() << "\n";
+}
 
-        if (choice == 0)
-            return;
+int choosePriority() {
+    cout << "1. Regular\n2. Express\n3. VIP\n";
+    return readInt("Choose: ");
+}
+
+string undoLastAction() {
+    string last = market.lastOperation();
+    if (last == "Nothing to undo.")
+        return last;
+    if (askYesNo("Undo \"" + last + "\"?"))
+        return market.undo();
+    return "";
+}
+
+// ---------------- Cashier ----------------
+
+void saleScreen(Customer customer) {
+    market.startSale();
+    string message = "";
+
+    while (true) {
+        header("Sale - " + customer.name + " (" + priorityName(customer.priority) + ")");
+        printCart();
+        cout << "\n";
+        showMessage(message);
+        message = "";
+
+        cout << "1. Scan item\n"
+             << "2. Remove item\n"
+             << "3. Undo last action\n"
+             << "4. Pay\n"
+             << "5. Cancel sale\n";
+        int choice = readInt("Choose: ");
 
         if (choice == 1) {
-            int id = readInt("ID: ");
+            int code = readInt("Product code: ");
+            int quantity = readInt("Quantity: ");
+            message = market.addToCart(code, quantity);
+        } else if (choice == 2) {
+            message = market.removeFromCart(readInt("Product code: "));
+        } else if (choice == 3) {
+            message = undoLastAction();
+        } else if (choice == 4) {
+            double total = market.cartTotal();
+            if (total == 0) {
+                message = "The cart is empty.";
+                continue;
+            }
+            double paid = readDouble("Amount paid: ");
+            if (paid < total) {
+                message = "Not enough money.";
+                continue;
+            }
+
+            header("Receipt - " + customer.name);
+            printCart();
+            cout << left << setw(34) << "Paid" << paid << "\n";
+            cout << left << setw(34) << "Change" << paid - total << "\n\n";
+            market.checkout();
+            cout << "Thank you for shopping with us!\n";
+            pause();
+            return;
+        } else if (choice == 5) {
+            if (askYesNo("Cancel this sale?")) {
+                cout << market.cancelSale() << "\n";
+                pause();
+                return;
+            }
+        } else {
+            message = "Invalid choice.";
+        }
+    }
+}
+
+void cashierMenu() {
+    string message = "";
+
+    while (true) {
+        header("Cashier");
+        vector<Customer> line = market.getCheckoutLane();
+        if (line.empty())
+            cout << "No customers waiting at checkout.\n\n";
+        else
+            cout << "Waiting: " << line.size() << "   Next: " << line[0].name
+                 << " (" << priorityName(line[0].priority) << ")\n\n";
+        showMessage(message);
+        message = "";
+
+        cout << "1. Customer joins the checkout line\n"
+             << "2. Serve next customer\n"
+             << "3. View checkout line\n"
+             << "4. Change a customer's priority\n"
+             << "0. Back\n";
+        int choice = readInt("Choose: ");
+
+        if (choice == 0) {
+            return;
+        } else if (choice == 1) {
+            string name = readText("Customer name: ");
+            bool vip = askYesNo("VIP member?");
+            int items = readInt("Number of items in basket: ");
+
+            int priority = 1;
+            if (vip)
+                priority = 3;
+            else if (items <= 10)
+                priority = 2;
+
+            message = market.addToCheckoutLane(name, priority);
+        } else if (choice == 2) {
+            if (line.empty()) {
+                message = "No customers waiting.";
+                continue;
+            }
+            Customer next = line[0];
+            market.serveCheckoutLane();
+            saleScreen(next);
+        } else if (choice == 3) {
+            if (line.empty())
+                cout << "Nobody is waiting.\n";
+            for (int i = 0; i < (int)line.size(); i++)
+                cout << i + 1 << ". " << line[i].name << " (" << priorityName(line[i].priority) << ")\n";
+            pause();
+        } else if (choice == 4) {
+            if (line.empty()) {
+                message = "No customers waiting.";
+                continue;
+            }
+            for (int i = 0; i < (int)line.size(); i++)
+                cout << i + 1 << ". " << line[i].name << " (" << priorityName(line[i].priority) << ")\n";
+            int number = readInt("Customer number: ");
+            if (number < 1 || number > (int)line.size()) {
+                message = "Invalid customer number.";
+                continue;
+            }
+            message = market.changePriority(line[number - 1].id, choosePriority());
+        } else {
+            message = "Invalid choice.";
+        }
+    }
+}
+
+// ---------------- Inventory ----------------
+
+void inventoryMenu() {
+    string message = "";
+
+    while (true) {
+        header("Inventory");
+        showMessage(message);
+        message = "";
+
+        cout << "1. View all products\n"
+             << "2. Find product\n"
+             << "3. Add new product\n"
+             << "4. Change price\n"
+             << "5. Adjust stock\n"
+             << "6. Remove product\n"
+             << "7. Undo last change\n"
+             << "0. Back\n";
+        int choice = readInt("Choose: ");
+
+        if (choice == 0) {
+            return;
+        } else if (choice == 1) {
+            printProducts(market.getSortedProducts());
+            pause();
+        } else if (choice == 2) {
+            Product* p = market.findProduct(readInt("Product code: "));
+            if (p == nullptr) {
+                message = "Product not found.";
+                continue;
+            }
+            cout << "\nCode:  " << p->id << "\nName:  " << p->name
+                 << "\nPrice: " << fixed << setprecision(2) << p->price
+                 << "\nStock: " << p->quantity << "\n";
+            pause();
+        } else if (choice == 3) {
+            int code = readInt("Product code: ");
+            if (market.findProduct(code) != nullptr) {
+                message = "This code is already used.";
+                continue;
+            }
             string name = readText("Name: ");
             double price = readDouble("Price: ");
-            int quantity = readInt("Quantity: ");
-            cout << market.addProduct(id, name, price, quantity) << "\n";
-        } else if (choice == 2) {
-            printProduct(market.findProduct(readInt("ID: ")));
-        } else if (choice == 3) {
-            printProduct(market.findProductInTree(readInt("ID: ")));
+            int quantity = readInt("Stock: ");
+            message = market.addProduct(code, name, price, quantity);
         } else if (choice == 4) {
-            int id = readInt("ID: ");
-            double price = readDouble("New price: ");
-            cout << market.updatePrice(id, price) << "\n";
+            Product* p = market.findProduct(readInt("Product code: "));
+            if (p == nullptr) {
+                message = "Product not found.";
+                continue;
+            }
+            cout << p->name << " costs " << fixed << setprecision(2) << p->price << "\n";
+            message = market.updatePrice(p->id, readDouble("New price: "));
         } else if (choice == 5) {
-            int id = readInt("ID: ");
-            int quantity = readInt("New quantity: ");
-            cout << market.updateQuantity(id, quantity) << "\n";
+            Product* p = market.findProduct(readInt("Product code: "));
+            if (p == nullptr) {
+                message = "Product not found.";
+                continue;
+            }
+            cout << p->name << " has " << p->quantity << " in stock\n";
+            message = market.updateQuantity(p->id, readInt("New stock: "));
         } else if (choice == 6) {
-            cout << market.deleteProduct(readInt("ID: ")) << "\n";
+            Product* p = market.findProduct(readInt("Product code: "));
+            if (p == nullptr) {
+                message = "Product not found.";
+                continue;
+            }
+            if (askYesNo("Remove " + p->name + "?"))
+                message = market.deleteProduct(p->id);
         } else if (choice == 7) {
-            printProducts(market.getSortedProducts());
+            message = undoLastAction();
         } else {
-            cout << "Invalid choice.\n";
+            message = "Invalid choice.";
         }
-        pause();
     }
 }
 
-void serviceLineMenu() {
+// ---------------- Deliveries ----------------
+
+void deliveriesMenu() {
+    string message = "";
+
     while (true) {
-        printTitle("Customer Service Line");
-        cout << market.serviceLineStatus() << "\n\n";
-        cout << "1. Add customer\n"
-             << "2. Serve next customer\n"
-             << "3. Show line\n"
+        header("Stock Deliveries");
+
+        vector<Product> low = market.getLowStock(LOW_STOCK);
+        if (low.empty()) {
+            cout << "All products are well stocked.\n";
+        } else {
+            cout << "Running low:\n";
+            for (int i = 0; i < (int)low.size(); i++)
+                cout << "  - " << low[i].name << " (code " << low[i].id << ", " << low[i].quantity << " left)\n";
+        }
+        cout << "Pending orders: " << market.getRestockQueue().size() << "\n\n";
+        showMessage(message);
+        message = "";
+
+        cout << "1. Order stock\n"
+             << "2. Receive next delivery\n"
+             << "3. View pending orders\n"
              << "0. Back\n";
-        int choice = readInt("Choice: ");
+        int choice = readInt("Choose: ");
 
-        if (choice == 0)
+        if (choice == 0) {
             return;
+        } else if (choice == 1) {
+            int code = readInt("Product code: ");
+            int amount = readInt("Amount to order: ");
+            message = market.requestRestock(code, amount);
+        } else if (choice == 2) {
+            message = market.processRestock();
+        } else if (choice == 3) {
+            vector<RestockRequest> orders = market.getRestockQueue();
+            if (orders.empty())
+                cout << "No pending orders.\n";
+            for (int i = 0; i < (int)orders.size(); i++) {
+                Product* p = market.findProduct(orders[i].productId);
+                string name = (p != nullptr) ? p->name : "(removed product)";
+                cout << i + 1 << ". " << name << " x " << orders[i].amount << "\n";
+            }
+            pause();
+        } else {
+            message = "Invalid choice.";
+        }
+    }
+}
 
-        if (choice == 1)
-            cout << market.addToServiceLine(readText("Customer name: ")) << "\n";
-        else if (choice == 2)
-            cout << market.serveServiceLine() << "\n";
-        else if (choice == 3)
-            printCustomers(market.getServiceLine(), false);
+// ---------------- Service desk ----------------
+
+void serviceDeskMenu() {
+    string message = "";
+
+    while (true) {
+        header("Customer Service Desk");
+        vector<Customer> waiting = market.getServiceLine();
+        if (waiting.empty())
+            cout << "Nobody is waiting.\n\n";
         else
-            cout << "Invalid choice.\n";
-        pause();
-    }
-}
+            cout << "Waiting: " << waiting.size() << "   Next: " << waiting[0].name << "\n\n";
+        showMessage(message);
+        message = "";
 
-void checkoutLaneMenu() {
-    while (true) {
-        printTitle("Express & VIP Checkout Lane");
-        cout << market.peekCheckoutLane() << "\n\n";
-        cout << "1. Add customer\n"
-             << "2. Serve next customer\n"
-             << "3. Change customer priority\n"
-             << "4. Show lane (serving order)\n"
+        cout << "1. New customer (take a ticket)\n"
+             << "2. Call next customer\n"
+             << "3. View waiting list\n"
              << "0. Back\n";
-        int choice = readInt("Choice: ");
+        int choice = readInt("Choose: ");
 
-        if (choice == 0)
+        if (choice == 0) {
             return;
-
-        if (choice == 1) {
-            string name = readText("Customer name: ");
-            int priority = readInt("Priority (1 = Normal, 2 = Express, 3 = VIP): ");
-            cout << market.addToCheckoutLane(name, priority) << "\n";
+        } else if (choice == 1) {
+            message = market.addToServiceLine(readText("Customer name: "));
         } else if (choice == 2) {
-            cout << market.serveCheckoutLane() << "\n";
+            message = market.serveServiceLine();
         } else if (choice == 3) {
-            int id = readInt("Customer ID: ");
-            int priority = readInt("New priority (1 = Normal, 2 = Express, 3 = VIP): ");
-            cout << market.changePriority(id, priority) << "\n";
-        } else if (choice == 4) {
-            printCustomers(market.getCheckoutLane(), true);
+            if (waiting.empty())
+                cout << "Nobody is waiting.\n";
+            for (int i = 0; i < (int)waiting.size(); i++)
+                cout << i + 1 << ". " << waiting[i].name << " (ticket " << waiting[i].id << ")\n";
+            pause();
         } else {
-            cout << "Invalid choice.\n";
+            message = "Invalid choice.";
         }
-        pause();
     }
 }
 
-void cartMenu() {
-    while (true) {
-        printTitle("Shopping Cart");
-        cout << "1. Add item\n"
-             << "2. Remove item\n"
-             << "3. Show cart\n"
-             << "4. Checkout\n"
-             << "0. Back\n";
-        int choice = readInt("Choice: ");
-
-        if (choice == 0)
-            return;
-
-        if (choice == 1) {
-            int id = readInt("Product ID: ");
-            int quantity = readInt("Quantity: ");
-            cout << market.addToCart(id, quantity) << "\n";
-        } else if (choice == 2) {
-            cout << market.removeFromCart(readInt("Product ID: ")) << "\n";
-        } else if (choice == 3) {
-            vector<CartItem> items = market.getCart();
-            if (items.empty()) {
-                cout << "The cart is empty.\n";
-            } else {
-                cout << left << setw(8) << "ID" << setw(20) << "Name" << setw(6) << "Qty" << "Subtotal\n";
-                cout << string(42, '-') << "\n";
-                for (int i = 0; i < (int)items.size(); i++) {
-                    cout << left << setw(8) << items[i].productId << setw(20) << items[i].name
-                         << setw(6) << items[i].quantity
-                         << fixed << setprecision(2) << items[i].price * items[i].quantity << "\n";
-                }
-                cout << "Total: " << market.cartTotal() << "\n";
-            }
-        } else if (choice == 4) {
-            cout << market.checkout() << "\n";
-        } else {
-            cout << "Invalid choice.\n";
-        }
-        pause();
-    }
-}
-
-void restockMenu() {
-    while (true) {
-        printTitle("Restocking");
-        cout << market.restockStatus() << "\n\n";
-        cout << "1. Request restock\n"
-             << "2. Process next restock\n"
-             << "3. Show restock queue\n"
-             << "0. Back\n";
-        int choice = readInt("Choice: ");
-
-        if (choice == 0)
-            return;
-
-        if (choice == 1) {
-            int id = readInt("Product ID: ");
-            int amount = readInt("Amount: ");
-            cout << market.requestRestock(id, amount) << "\n";
-        } else if (choice == 2) {
-            cout << market.processRestock() << "\n";
-        } else if (choice == 3) {
-            vector<RestockRequest> list = market.getRestockQueue();
-            if (list.empty())
-                cout << "Nothing waiting.\n";
-            for (int i = 0; i < (int)list.size(); i++) {
-                Product* p = market.findProduct(list[i].productId);
-                string name = (p != nullptr) ? p->name : "(deleted)";
-                cout << i + 1 << ". " << name << " +" << list[i].amount << "\n";
-            }
-        } else {
-            cout << "Invalid choice.\n";
-        }
-        pause();
-    }
-}
-
-void undoMenu() {
-    printTitle("Undo");
-    cout << "Last operation: " << market.lastOperation() << "\n";
-    cout << "1. Undo it\n0. Back\n";
-    if (readInt("Choice: ") == 1)
-        cout << market.undo() << "\n";
-    pause();
-}
+// ---------------- Report ----------------
 
 void dailyReport() {
-    printTitle("Daily Report");
-    cout << "Total sales: " << fixed << setprecision(2) << market.getTotalSales() << "\n";
-    cout << "Items sold: " << market.getItemsSold() << "\n";
-    cout << "Customers served: " << market.getCustomersServed() << "\n";
-    cout << "\nLow stock (5 or less):\n";
-    printProducts(market.getLowStock(5));
+    header("End of Day Report");
+    cout << "Total sales:       " << fixed << setprecision(2) << market.getTotalSales() << "\n";
+    cout << "Items sold:        " << market.getItemsSold() << "\n";
+    cout << "Customers served:  " << market.getCustomersServed() << "\n";
+    cout << "Pending orders:    " << market.getRestockQueue().size() << "\n\n";
+    cout << "Products running low:\n";
+    printProducts(market.getLowStock(LOW_STOCK));
     pause();
 }
+
+// ---------------- Main menu ----------------
 
 int main() {
     market.loadSampleData();
 
     while (true) {
-        printTitle("Supermarket Management System");
-        cout << "1. Products\n"
-             << "2. Customer service line\n"
-             << "3. Express & VIP checkout lane\n"
-             << "4. Shopping cart\n"
-             << "5. Restocking\n"
-             << "6. Undo last operation\n"
-             << "7. Daily report\n"
+        header("SUPERMARKET MANAGEMENT SYSTEM");
+        cout << "Checkout line: " << market.getCheckoutLane().size()
+             << "  |  Service desk: " << market.getServiceLine().size()
+             << "  |  Low stock: " << market.getLowStock(LOW_STOCK).size() << "\n\n";
+
+        cout << "1. Cashier\n"
+             << "2. Inventory\n"
+             << "3. Stock deliveries\n"
+             << "4. Customer service desk\n"
+             << "5. End of day report\n"
              << "0. Exit\n";
-        int choice = readInt("Choice: ");
+        int choice = readInt("Choose: ");
 
         if (choice == 0)
             break;
-
-        if (choice == 1) productsMenu();
-        else if (choice == 2) serviceLineMenu();
-        else if (choice == 3) checkoutLaneMenu();
-        else if (choice == 4) cartMenu();
-        else if (choice == 5) restockMenu();
-        else if (choice == 6) undoMenu();
-        else if (choice == 7) dailyReport();
-        else cout << "Invalid choice.\n";
+        else if (choice == 1)
+            cashierMenu();
+        else if (choice == 2)
+            inventoryMenu();
+        else if (choice == 3)
+            deliveriesMenu();
+        else if (choice == 4)
+            serviceDeskMenu();
+        else if (choice == 5)
+            dailyReport();
     }
 
     cout << "Goodbye!\n";
