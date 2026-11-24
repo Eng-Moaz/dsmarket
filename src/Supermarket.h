@@ -33,6 +33,7 @@ private:
     int customersServed;
 
     void rebuildTree();
+    string describe(Operation op);
 
 public:
     Supermarket();
@@ -64,7 +65,9 @@ public:
     // Shopping cart (Linked List)
     string addToCart(int productId, int quantity);
     string removeFromCart(int productId);
+    void startSale();
     string checkout();
+    string cancelSale();
     vector<CartItem> getCart();
     double cartTotal();
 

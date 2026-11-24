@@ -108,20 +108,20 @@ vector<Product> Supermarket::getSortedProducts() {
 
 string Supermarket::addToServiceLine(string name) {
     if (serviceLine.isFull())
-        return "The service line is full.";
+        return "The service desk is full, please come back later.";
 
     Customer c = {nextCustomerId++, name, 1, clock++};
     serviceLine.enqueue(c);
-    return name + " joined the service line (ID " + to_string(c.id) + ").";
+    return name + " took ticket #" + to_string(c.id) + ".";
 }
 
 string Supermarket::serveServiceLine() {
     Customer c;
     if (!serviceLine.dequeue(c))
-        return "The service line is empty.";
+        return "Nobody is waiting.";
 
     customersServed++;
-    return "Served " + c.name + " (ID " + to_string(c.id) + ").";
+    return "Now serving " + c.name + " (ticket #" + to_string(c.id) + ").";
 }
 
 vector<Customer> Supermarket::getServiceLine() {
@@ -146,17 +146,17 @@ string Supermarket::addToCheckoutLane(string name, int priority) {
     if (priority < 1 || priority > 3)
         return "Priority must be 1, 2 or 3.";
     if (checkoutLane.isFull())
-        return "The checkout lane is full.";
+        return "The checkout line is full.";
 
     Customer c = {nextCustomerId++, name, priority, clock++};
     checkoutLane.insert(c);
-    return name + " joined the checkout lane as " + priorityName(priority) + " (ID " + to_string(c.id) + ").";
+    return name + " joined the checkout line as " + priorityName(priority) + ".";
 }
 
 string Supermarket::serveCheckoutLane() {
     Customer c;
     if (!checkoutLane.extractTop(c))
-        return "The checkout lane is empty.";
+        return "No customers waiting.";
 
     customersServed++;
     return "Served " + c.name + " [" + priorityName(c.priority) + "].";
@@ -164,7 +164,7 @@ string Supermarket::serveCheckoutLane() {
 
 string Supermarket::peekCheckoutLane() {
     if (checkoutLane.isEmpty())
-        return "The checkout lane is empty.";
+        return "No customers waiting.";
 
     Customer c = checkoutLane.peek();
     return "Next: " + c.name + " [" + priorityName(c.priority) + "]";
@@ -174,7 +174,7 @@ string Supermarket::changePriority(int customerId, int newPriority) {
     if (newPriority < 1 || newPriority > 3)
         return "Priority must be 1, 2 or 3.";
     if (!checkoutLane.updatePriority(customerId, newPriority))
-        return "Customer not found in the checkout lane.";
+        return "Customer not found in the checkout line.";
     return "Priority updated to " + priorityName(newPriority) + ".";
 }
 
@@ -216,6 +216,25 @@ string Supermarket::removeFromCart(int productId) {
     return "Removed " + removed.name + " from the cart.";
 }
 
+// a new sale starts with an empty cart and a fresh undo history
+void Supermarket::startSale() {
+    cart.clear();
+    undoStack.clear();
+}
+
+string Supermarket::cancelSale() {
+    vector<CartItem> items = cart.traverse();
+    for (int i = 0; i < (int)items.size(); i++) {
+        Product* p = products.search(items[i].productId);
+        if (p != nullptr)
+            p->quantity += items[i].quantity;
+    }
+    cart.clear();
+    undoStack.clear();
+    rebuildTree();
+    return "Sale cancelled. Items returned to the shelves.";
+}
+
 string Supermarket::checkout() {
     if (cart.isEmpty())
         return "The cart is empty.";
@@ -245,24 +264,24 @@ string Supermarket::requestRestock(int productId, int amount) {
     if (amount <= 0)
         return "Amount must be more than zero.";
     if (restockQueue.isFull())
-        return "The restock queue is full.";
+        return "Too many pending orders.";
 
     restockQueue.enqueue({productId, amount});
-    return p->name + " added to the restock queue.";
+    return "Order placed: " + to_string(amount) + " x " + p->name + ".";
 }
 
 string Supermarket::processRestock() {
     RestockRequest r;
     if (!restockQueue.dequeue(r))
-        return "No products waiting for restock.";
+        return "No pending deliveries.";
 
     Product* p = products.search(r.productId);
     if (p == nullptr)
-        return "Product " + to_string(r.productId) + " no longer exists, request skipped.";
+        return "Delivery skipped, product " + to_string(r.productId) + " no longer exists.";
 
     p->quantity += r.amount;
     rebuildTree();
-    return "Restocked " + p->name + " by " + to_string(r.amount) + ". New quantity: " + to_string(p->quantity);
+    return "Delivery received: " + to_string(r.amount) + " x " + p->name + ". Now in stock: " + to_string(p->quantity);
 }
 
 vector<RestockRequest> Supermarket::getRestockQueue() {
@@ -308,15 +327,23 @@ string Supermarket::undo() {
     }
 
     rebuildTree();
-    return "Undid: " + op.type + " (" + p.name + ")";
+    return "Undone: " + describe(op);
 }
 
 string Supermarket::lastOperation() {
     if (undoStack.isEmpty())
-        return "No operations yet.";
+        return "Nothing to undo.";
+    return describe(undoStack.peek());
+}
 
-    Operation op = undoStack.peek();
-    return op.type + " (" + op.product.name + ")";
+string Supermarket::describe(Operation op) {
+    string name = op.product.name;
+    if (op.type == "ADD_PRODUCT") return "Added product " + name;
+    if (op.type == "DELETE_PRODUCT") return "Removed product " + name;
+    if (op.type == "UPDATE_PRODUCT") return "Changed " + name;
+    if (op.type == "ADD_TO_CART") return "Scanned " + to_string(op.quantity) + " x " + name;
+    if (op.type == "REMOVE_FROM_CART") return "Removed " + name + " from the cart";
+    return op.type;
 }
 
 // ---------------- Report ----------------
