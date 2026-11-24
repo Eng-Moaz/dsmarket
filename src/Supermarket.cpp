@@ -216,6 +216,25 @@ string Supermarket::removeFromCart(int productId) {
     return "Removed " + removed.name + " from the cart.";
 }
 
+// a new sale starts with an empty cart and a fresh undo history
+void Supermarket::startSale() {
+    cart.clear();
+    undoStack.clear();
+}
+
+string Supermarket::cancelSale() {
+    vector<CartItem> items = cart.traverse();
+    for (int i = 0; i < (int)items.size(); i++) {
+        Product* p = products.search(items[i].productId);
+        if (p != nullptr)
+            p->quantity += items[i].quantity;
+    }
+    cart.clear();
+    undoStack.clear();
+    rebuildTree();
+    return "Sale cancelled. Items returned to the shelves.";
+}
+
 string Supermarket::checkout() {
     if (cart.isEmpty())
         return "The cart is empty.";
@@ -308,15 +327,23 @@ string Supermarket::undo() {
     }
 
     rebuildTree();
-    return "Undid: " + op.type + " (" + p.name + ")";
+    return "Undone: " + describe(op);
 }
 
 string Supermarket::lastOperation() {
     if (undoStack.isEmpty())
-        return "No operations yet.";
+        return "Nothing to undo.";
+    return describe(undoStack.peek());
+}
 
-    Operation op = undoStack.peek();
-    return op.type + " (" + op.product.name + ")";
+string Supermarket::describe(Operation op) {
+    string name = op.product.name;
+    if (op.type == "ADD_PRODUCT") return "Added product " + name;
+    if (op.type == "DELETE_PRODUCT") return "Removed product " + name;
+    if (op.type == "UPDATE_PRODUCT") return "Changed " + name;
+    if (op.type == "ADD_TO_CART") return "Scanned " + to_string(op.quantity) + " x " + name;
+    if (op.type == "REMOVE_FROM_CART") return "Removed " + name + " from the cart";
+    return op.type;
 }
 
 // ---------------- Report ----------------
