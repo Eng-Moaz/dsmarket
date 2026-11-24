@@ -20,3 +20,12 @@ Supermarket Management System - Data Structures project.
 - `main` - data structures and the supermarket logic
 - `tui` - console (terminal) version
 - `gui` - Qt desktop version
+
+## Build and run (TUI)
+
+```
+g++ -std=c++17 src/*.cpp -o dsmarket
+./dsmarket
+```
+
+On Windows (MinGW) the output file is `dsmarket.exe`. You can also just add all the files in `src/` to a Code::Blocks / Visual Studio project.
