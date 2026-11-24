@@ -20,3 +20,19 @@ Supermarket Management System - Data Structures project.
 - `main` - data structures and the supermarket logic
 - `tui` - console (terminal) version
 - `gui` - Qt desktop version
+
+## Build and run (GUI)
+
+Needs Qt 6 (Widgets).
+
+**Qt Creator (easiest, works on Windows):** File > Open File or Project > choose `CMakeLists.txt` > Run.
+
+**Command line (Linux):**
+
+```
+sudo dnf install qt6-qtbase-devel     # Fedora
+sudo apt install qt6-base-dev         # Ubuntu
+cmake -S . -B build
+cmake --build build
+./build/dsmarket
+```
