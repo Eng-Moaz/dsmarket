@@ -68,7 +68,7 @@ static QTableWidget* createTable(QStringList headers) {
 
 static QComboBox* createPriorityBox() {
     QComboBox* box = new QComboBox;
-    box->addItem("Normal", 1);
+    box->addItem("Regular", 1);
     box->addItem("Express", 2);
     box->addItem("VIP", 3);
     return box;
